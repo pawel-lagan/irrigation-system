@@ -3,6 +3,8 @@
 #include <Ethernet.h>
 #include <ArduinoHA.h>
 
+#define ARDUINOHA_DEBUG 1
+
 #define SLOTS 4
 #define SENSOR_MAX_VALUE 562
 #define SENSOR_MIN_VALUE 200
@@ -74,9 +76,9 @@ WaterPump* pump[4] = { 0, 0, 0, 0 };
 
 HASensor* haSensor[4] = { 0, 0, 0, 0 };
 
-EthernetClient client;
-HADevice device(mac, sizeof(mac));
-HAMqtt mqtt(client, device);
+EthernetClient *client;
+HADevice *device;
+HAMqtt *mqtt;
 
 void printData() {
   Serial.println("Board Information:");
@@ -121,6 +123,10 @@ void setup()
   printData();
   Serial.println("----------------------------------------");
 
+  client = new EthernetClient();
+  device = new HADevice(mac, sizeof(mac));
+  mqtt = new HAMqtt(*client, *device);
+
   for(int i = 0;i < SLOTS; i++) {
     sensor[i] = new Sensor(sensorPin[i], SENSOR_MAX_VALUE, SENSOR_MIN_VALUE);
     pump[i] = new WaterPump(switchPin[i]);
@@ -136,23 +142,22 @@ void setup()
     // Serial.println((String("Pump ") + String(i) + " off"));
   }
 
+  delay(5000);
+
   Ethernet.begin(mac);
 
   // set device's details (optional)
-  device.setName("Irrigation System");
-  device.setSoftwareVersion("1.0.0");
+  device->setName("Irrigation System");
+  device->setSoftwareVersion("1.0.0");
 
-  mqtt.begin(BROKER_ADDR);
+  mqtt->begin(BROKER_ADDR);
 
-  delay(5000);
+  
 }
 
 void loop()
 {  
-  Ethernet.maintain();
-  mqtt.loop();
-
-   //Read Temperature sensor value   
+  //Read Temperature sensor value   
   for(int i = 0;i < SLOTS; i++) {
     sensor[i]->readValue();
     Serial.println("Sensor " + String(i) + " value = " + String(sensor[i]->getMeasure()) + " norm = " + String(sensor[i]->getNormalizedMeasure()));
@@ -169,9 +174,12 @@ void loop()
       Serial.println(String("Pump ") + String(i) + "off");
     }
     haSensor[i]->setValue(String(sensor[i]->getNormalizedMeasure()).c_str());
-  }
+  } 
+  
+  delay(1000);
 
-  delay(2000);  
+  Ethernet.maintain();
+  mqtt->loop();
 }  
 
 
