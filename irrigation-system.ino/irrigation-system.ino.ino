@@ -1,7 +1,20 @@
-#define SLOTS 1
+#include "WiFiCredentials.h"
+#include <WiFiS3.h>
+#include <Ethernet.h>
+#include <ArduinoHA.h>
+
+#define SLOTS 4
 #define SENSOR_MAX_VALUE 562
 #define SENSOR_MIN_VALUE 200
 #define DRY_THRESHOLD 0.5
+
+char ssid[] = WIFI_SSID;        // your network SSID (name)
+char pass[] = WIFI_PASSWORD;    // your network password (use for WPA, or use as key for WEP)
+int status = WL_IDLE_STATUS;
+
+
+#define BROKER_ADDR IPAddress(192,168,1,31)
+byte mac[] = {0x00, 0x10, 0xFA, 0x6E, 0x38, 0x4A};
 
 int switchPin[4] = {7,8,9,10};
 int sensorPin[4] = {A0,A1,A2,A3};
@@ -59,16 +72,63 @@ class WaterPump {
 Sensor*  sensor[4] = { 0, 0, 0, 0 };
 WaterPump* pump[4] = { 0, 0, 0, 0 };
 
+HASensor* haSensor[4] = { 0, 0, 0, 0 };
+
+EthernetClient client;
+HADevice device(mac, sizeof(mac));
+HAMqtt mqtt(client, device);
+
+void printData() {
+  Serial.println("Board Information:");
+  // print your board's IP address:
+  IPAddress ip = WiFi.localIP();
+  Serial.print("IP Address: ");
+  Serial.println(ip);
+
+  Serial.println();
+  Serial.println("Network Information:");
+  Serial.print("SSID: ");
+  Serial.println(WiFi.SSID());
+
+  // print the received signal strength:
+  long rssi = WiFi.RSSI();
+  Serial.print("signal strength (RSSI):");
+  Serial.println(rssi);
+
+}
 
 void setup()
 {
   Serial.begin(9600);    
 
+  while (!Serial);
+
+  // attempt to connect to Wifi network:
+  while (status != WL_CONNECTED) {
+    Serial.print("Attempting to connect to network: ");
+    Serial.println(ssid);
+    // Connect to WPA/WPA2 network:
+    status = WiFi.begin(ssid, pass);
+
+    // wait 10 seconds for connection:
+    delay(10000);
+  }
+
+  // you're connected now, so print out the data:
+  Serial.println("You're connected to the network");
+
+  Serial.println("----------------------------------------");
+  printData();
+  Serial.println("----------------------------------------");
+
   for(int i = 0;i < SLOTS; i++) {
     sensor[i] = new Sensor(sensorPin[i], SENSOR_MAX_VALUE, SENSOR_MIN_VALUE);
     pump[i] = new WaterPump(switchPin[i]);
     pinMode(switchPin[i], OUTPUT);
-    // Serial.println((String("SLOT init ")+String(i)));
+    // Serial.println(());
+    haSensor[i] = new HASensor((String("moisture-sensor-")+String(i)).c_str());
+    haSensor[i]->setIcon("mdi:home");
+    haSensor[i]->setName((String("Moisture sensor ")+String(i)).c_str());
   }    
 
   for(int i = 0;i < SLOTS; i++) {
@@ -76,11 +136,22 @@ void setup()
     // Serial.println((String("Pump ") + String(i) + " off"));
   }
 
+  Ethernet.begin(mac);
+
+  // set device's details (optional)
+  device.setName("Irrigation System");
+  device.setSoftwareVersion("1.0.0");
+
+  mqtt.begin(BROKER_ADDR);
+
   delay(5000);
 }
 
 void loop()
 {  
+  Ethernet.maintain();
+  mqtt.loop();
+
    //Read Temperature sensor value   
   for(int i = 0;i < SLOTS; i++) {
     sensor[i]->readValue();
@@ -97,9 +168,10 @@ void loop()
       pump[i]->off();
       Serial.println(String("Pump ") + String(i) + "off");
     }
+    haSensor[i]->setValue(String(sensor[i]->getNormalizedMeasure()).c_str());
   }
 
-  delay(1000);  
+  delay(2000);  
 }  
 
 
